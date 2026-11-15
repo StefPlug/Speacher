@@ -15,7 +15,7 @@ import {
   buildAsrPrompt,
   buildFormatSystemPrompt,
   type Style,
-} from './prompts.ts';
+} from '../shared/prompts.ts';
 
 const PORT = Number(process.env.API_PORT ?? 8787);
 const ASR_MODEL = process.env.ASR_MODEL ?? 'whisper-large-v3-turbo';

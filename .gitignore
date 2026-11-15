@@ -7,3 +7,7 @@ dist/
 
 # локальные архивы проекта
 speacher-*.zip
+speacher-extension.zip
+
+# сборка расширения
+dist-extension/

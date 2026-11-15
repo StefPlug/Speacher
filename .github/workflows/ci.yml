@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+    branches: [main, 'arena/**']
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Типы
+        run: npm run typecheck
+      - name: Сборка веб-версии
+        run: npm run build
+      - name: Сборка расширения
+        run: npm run build:ext
+      - name: Проверка манифеста и бандла расширения
+        run: node scripts/check-extension.mjs
+      - name: Проверки API на моке Groq
+        run: bash scripts/smoke.sh
