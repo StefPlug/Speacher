@@ -11,6 +11,13 @@ export type Style = 'neutral' | 'message' | 'email' | 'code';
 
 export const STYLES: Style[] = ['neutral', 'message', 'email', 'code'];
 
+export const STYLE_LABELS: Record<Style, string> = {
+  neutral: 'Обычный текст',
+  message: 'Сообщение',
+  email: 'Письмо',
+  code: 'Код',
+};
+
 const STYLE_RULES: Record<Style, string> = {
   neutral: 'Нейтральный письменный стиль: обычные абзацы, без приветствий и подписей.',
   message:

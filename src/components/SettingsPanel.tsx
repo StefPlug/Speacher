@@ -1,15 +1,30 @@
-import { Plus, Trash2, X } from 'lucide-react';
+import { Eye, EyeOff, KeyRound, Plus, ShieldCheck, Trash2, X } from 'lucide-react';
 import { useState } from 'react';
-import type { LanguageChoice, ModelChoice, Settings, Style } from '../lib/types';
+import { checkKey, GroqClientError } from '../lib/api';
+import type { LanguageChoice, ModelChoice, SpeacherSettings, Style } from '../lib/types';
 import { STYLE_LABELS } from '../lib/types';
 
 type Props = {
-  settings: Settings;
-  onChange: (patch: Partial<Settings>) => void;
+  settings: SpeacherSettings;
+  onChange: (patch: Partial<SpeacherSettings>) => void;
   onClose: () => void;
 };
 
-function Section({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
+type KeyStatus =
+  | { kind: 'unknown' }
+  | { kind: 'checking' }
+  | { kind: 'ok'; count: number }
+  | { kind: 'error'; message: string };
+
+function Section({
+  title,
+  hint,
+  children,
+}: {
+  title: string;
+  hint?: string;
+  children: React.ReactNode;
+}) {
   return (
     <section className="border-b border-ink-900/10 py-5 last:border-0">
       <h3 className="text-[14px] font-medium text-ink-900">{title}</h3>
@@ -24,7 +39,7 @@ function Segmented<T extends string>({
   value,
   onChange,
 }: {
-  options: Array<{ value: T; label: string; hint?: string }>;
+  options: Array<{ value: T; label: string }>;
   value: T;
   onChange: (value: T) => void;
 }) {
@@ -36,12 +51,9 @@ function Segmented<T extends string>({
           type="button"
           onClick={() => onChange(option.value)}
           aria-pressed={value === option.value}
-          title={option.hint}
           className={[
             'rounded-full px-3 py-1.5 text-[12px] transition',
-            value === option.value
-              ? 'bg-ink-900 text-cream-50'
-              : 'text-ink-500 hover:text-ink-900',
+            value === option.value ? 'bg-ink-900 text-cream-50' : 'text-ink-500 hover:text-ink-900',
           ].join(' ')}
         >
           {option.label}
@@ -66,7 +78,9 @@ function Toggle({
     <label className="flex cursor-pointer items-start justify-between gap-4">
       <span>
         <span className="block text-[13px] text-ink-900">{label}</span>
-        {hint ? <span className="mt-0.5 block text-[11px] leading-relaxed text-ink-400">{hint}</span> : null}
+        {hint ? (
+          <span className="mt-0.5 block text-[11px] leading-relaxed text-ink-400">{hint}</span>
+        ) : null}
       </span>
       <button
         type="button"
@@ -91,6 +105,25 @@ function Toggle({
 
 export function SettingsPanel({ settings, onChange, onClose }: Props) {
   const [draft, setDraft] = useState('');
+  const [showKey, setShowKey] = useState(false);
+  const [keyStatus, setKeyStatus] = useState<KeyStatus>({ kind: 'unknown' });
+
+  async function verify() {
+    if (!settings.apiKey.trim()) {
+      setKeyStatus({ kind: 'error', message: 'Сначала вставьте ключ.' });
+      return;
+    }
+    setKeyStatus({ kind: 'checking' });
+    try {
+      const result = await checkKey(settings.apiKey.trim());
+      setKeyStatus({ kind: 'ok', count: result.models.length });
+    } catch (error) {
+      setKeyStatus({
+        kind: 'error',
+        message: error instanceof GroqClientError ? error.message : 'Не удалось проверить ключ.',
+      });
+    }
+  }
 
   function addTerm() {
     const term = draft.trim();
@@ -99,7 +132,7 @@ export function SettingsPanel({ settings, onChange, onClose }: Props) {
       setDraft('');
       return;
     }
-    onChange({ vocabulary: [...settings.vocabulary, term].slice(0, 40) });
+    onChange({ vocabulary: [...settings.vocabulary, term].slice(0, 60) });
     setDraft('');
   }
 
@@ -128,12 +161,74 @@ export function SettingsPanel({ settings, onChange, onClose }: Props) {
 
         <div className="mt-4">
           <Section
+            title="Ключ Groq"
+            hint="Бесплатный ключ: console.groq.com/keys. Хранится в этом браузере и уходит только в Groq."
+          >
+            <div className="flex gap-2">
+              <div className="relative min-w-0 flex-1">
+                <input
+                  type={showKey ? 'text' : 'password'}
+                  value={settings.apiKey}
+                  onChange={(event) => {
+                    onChange({ apiKey: event.target.value.trim() });
+                    setKeyStatus({ kind: 'unknown' });
+                  }}
+                  placeholder="gsk_…"
+                  spellCheck={false}
+                  autoComplete="off"
+                  className="w-full rounded-full border border-ink-900/15 bg-transparent px-4 py-2.5 pr-11 font-mono text-[13px] text-ink-900 placeholder:text-ink-400 focus:border-ink-900/40 focus:outline-none"
+                  aria-label="Ключ Groq"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowKey((value) => !value)}
+                  className="absolute right-1.5 top-1/2 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-full text-ink-400 transition hover:bg-ink-900/5 hover:text-ink-900"
+                  aria-label={showKey ? 'Скрыть ключ' : 'Показать ключ'}
+                >
+                  {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={() => void verify()}
+                disabled={keyStatus.kind === 'checking'}
+                className="inline-flex shrink-0 items-center gap-2 rounded-full bg-ink-900 px-4 py-2.5 text-[12px] font-medium text-cream-50 transition hover:bg-ink-700 disabled:opacity-60"
+              >
+                <KeyRound size={13} />
+                {keyStatus.kind === 'checking' ? '…' : 'Проверить'}
+              </button>
+            </div>
+
+            {keyStatus.kind === 'ok' ? (
+              <p className="mt-2 flex items-start gap-1.5 text-[12px] leading-relaxed text-ink-500">
+                <ShieldCheck size={13} className="mt-0.5 shrink-0" />
+                Ключ работает, доступно моделей: {keyStatus.count}.
+              </p>
+            ) : null}
+            {keyStatus.kind === 'error' ? (
+              <p className="mt-2 text-[12px] leading-relaxed text-ink-900">{keyStatus.message}</p>
+            ) : null}
+
+            <p className="mt-3 flex items-start gap-1.5 text-[11px] leading-relaxed text-ink-400">
+              <ShieldCheck size={12} className="mt-0.5 shrink-0" />
+              Это статическая страница без сервера: аудио идёт из браузера прямо в Groq. Ключ
+              виден тому, у кого есть доступ к этому браузеру, — не используйте его на чужой машине.
+            </p>
+          </Section>
+
+          <Section
             title="Модель распознавания"
             hint="Turbo дешевле и быстрее, Large v3 точнее на сложной речи."
           >
             <Segmented<ModelChoice>
-              value={settings.model}
-              onChange={(model) => onChange({ model })}
+              value={settings.asrModel === 'whisper-large-v3' ? 'accurate' : 'turbo'}
+              onChange={(model) =>
+                onChange(
+                  model === 'accurate'
+                    ? { asrModelAccurate: 'whisper-large-v3' }
+                    : { asrModel: 'whisper-large-v3-turbo' },
+                )
+              }
               options={[
                 { value: 'turbo', label: 'Turbo' },
                 { value: 'accurate', label: 'Large v3' },
@@ -141,7 +236,7 @@ export function SettingsPanel({ settings, onChange, onClose }: Props) {
             />
           </Section>
 
-          <Section title="Язык" hint="Авто — Whisper определит сам. Явный язык точнее и быстрее.">
+          <Section title="Язык" hint="Авто — Whisper определит сам. Явный язык точнее.">
             <Segmented<LanguageChoice>
               value={settings.language}
               onChange={(language) => onChange({ language })}
@@ -166,7 +261,7 @@ export function SettingsPanel({ settings, onChange, onClose }: Props) {
 
           <Section
             title="Чистка текста"
-            hint="Убирает «э-э» и оговорки, ставит пунктуацию и абзацы. Выключите, если нужен дословный текст."
+            hint="Убирает «э-э» и оговорки, ставит пунктуацию и абзацы."
           >
             <Toggle
               checked={settings.cleanup}
@@ -177,7 +272,7 @@ export function SettingsPanel({ settings, onChange, onClose }: Props) {
 
           <Section
             title="Личный словарь"
-            hint="Имена, бренды, термины. Попадают в подсказку Whisper и в чистку текста. До 40 штук."
+            hint="Имена, бренды, термины. Идут в подсказку Whisper и в чистку. До 60 штук."
           >
             <div className="flex gap-2">
               <input
@@ -228,10 +323,7 @@ export function SettingsPanel({ settings, onChange, onClose }: Props) {
             )}
           </Section>
 
-          <Section
-            title="История"
-            hint="Хранится только в этом браузере, в localStorage. Аудио не сохраняется никогда."
-          >
+          <Section title="История" hint="Хранится только в этом браузере. Аудио не сохраняется никогда.">
             <Toggle
               checked={settings.saveHistory}
               onChange={(saveHistory) => onChange({ saveHistory })}

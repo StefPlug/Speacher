@@ -5,23 +5,16 @@ import { RecordingPill } from './components/RecordingPill';
 import { ResultCard } from './components/ResultCard';
 import { SettingsPanel } from './components/SettingsPanel';
 import { useRecorder } from './hooks/useRecorder';
-import {
-  formatText,
-  getHealth,
-  transcribeAudio,
-  type HealthResponse,
-  type TranscribeResponse,
-} from './lib/api';
+import { GroqClientError, reformat, runDictation } from './lib/api';
 import { clearHistory, loadHistory, loadSettings, saveHistory, saveSettings } from './lib/storage';
-import {
-  DEFAULT_SETTINGS,
-  type ApiError,
-  type HistoryEntry,
-  type Settings,
-  type Stage,
-  type Style,
-  type Timing,
+import type {
+  HistoryEntry,
+  SpeacherSettings,
+  Stage,
+  Style,
+  Timing,
 } from './lib/types';
+import { DEFAULT_SETTINGS } from './lib/types';
 
 type ResultState = {
   text: string;
@@ -32,47 +25,46 @@ type ResultState = {
   entryId: string | null;
 };
 
-const EMPTY_SETTINGS: Settings = DEFAULT_SETTINGS;
-
 function newId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
 export default function App() {
-  const [settings, setSettings] = useState<Settings>(EMPTY_SETTINGS);
+  const [settings, setSettings] = useState<SpeacherSettings>(DEFAULT_SETTINGS);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [stage, setStage] = useState<Stage>('idle');
   const [statusText, setStatusText] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ResultState | null>(null);
-  const [health, setHealth] = useState<HealthResponse | null>(null);
   const [insertTarget, setInsertTarget] = useState<HTMLElement | null>(null);
+  const [hydrated, setHydrated] = useState(false);
 
   const lastRecording = useRef<{ blob: Blob; durationMs: number } | null>(null);
   const focusTargetRef = useRef<HTMLElement | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const recorder = useRecorder();
+  const hasKey = settings.apiKey.trim().length > 0;
 
-  // Настройки и история поднимаются один раз на клиенте.
   useEffect(() => {
     setSettings(loadSettings());
     setHistory(loadHistory());
-    getHealth()
-      .then(setHealth)
-      .catch(() => setHealth(null));
+    setHydrated(true);
   }, []);
 
   useEffect(() => {
-    if (settings !== EMPTY_SETTINGS) saveSettings(settings);
-  }, [settings]);
+    if (hydrated) saveSettings(settings);
+  }, [settings, hydrated]);
 
   useEffect(() => {
-    if (settings.saveHistory) saveHistory(history);
-  }, [history, settings.saveHistory]);
+    if (hydrated && settings.saveHistory) saveHistory(history);
+  }, [history, settings.saveHistory, hydrated]);
 
-  const updateSettings = useCallback((patch: Partial<Settings>) => {
+  useEffect(() => {
+    if (hydrated && !settings.saveHistory) return;
+  }, [settings.saveHistory, hydrated]);
+
+  const updateSettings = useCallback((patch: Partial<SpeacherSettings>) => {
     setSettings((current) => ({ ...current, ...patch }));
   }, []);
 
@@ -80,37 +72,31 @@ export default function App() {
     if (!element) return null;
     const aria = element.getAttribute('aria-label') ?? element.getAttribute('placeholder');
     if (aria) return aria.length > 28 ? `${aria.slice(0, 28)}…` : aria;
-    if (element instanceof HTMLTextAreaElement || element instanceof HTMLInputElement) {
-      return element.tagName === 'TEXTAREA' ? 'текстовое поле' : 'поле ввода';
-    }
+    if (element instanceof HTMLTextAreaElement) return 'текстовое поле';
+    if (element instanceof HTMLInputElement) return 'поле ввода';
     return 'поле на странице';
   };
 
-  // Запоминаем последнее поле, куда пользователь поставил курсор.
   useEffect(() => {
     const onFocusIn = (event: FocusEvent) => {
       const target = event.target;
-      if (target instanceof HTMLElement) {
-        const editable =
-          target instanceof HTMLInputElement ||
-          target instanceof HTMLTextAreaElement ||
-          target.isContentEditable;
-        if (editable && !target.closest('[data-no-insert]')) {
-          focusTargetRef.current = target;
-          setInsertTarget(target);
-        }
+      if (!(target instanceof HTMLElement)) return;
+      const editable =
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target.isContentEditable;
+      if (editable && !target.closest('[data-no-insert]')) {
+        focusTargetRef.current = target;
+        setInsertTarget(target);
       }
     };
     document.addEventListener('focusin', onFocusIn);
     return () => document.removeEventListener('focusin', onFocusIn);
   }, []);
 
-  const addHistory = useCallback(
-    (entry: HistoryEntry) => {
-      setHistory((current) => [entry, ...current].slice(0, 60));
-    },
-    [],
-  );
+  const addHistory = useCallback((entry: HistoryEntry) => {
+    setHistory((current) => [entry, ...current].slice(0, 100));
+  }, []);
 
   const patchHistory = useCallback((entryId: string, patch: Partial<HistoryEntry>) => {
     setHistory((current) =>
@@ -124,106 +110,71 @@ export default function App() {
       setResult(null);
       lastRecording.current = { blob, durationMs };
       const startedAt = performance.now();
-      const localId = newId();
+
+      if (!hasKey) {
+        setStage('error');
+        setError('Ключ Groq не задан. Откройте настройки и вставьте ключ — он бесплатный.');
+        setSettingsOpen(true);
+        return;
+      }
 
       setStage('transcribing');
       setStatusText('Распознаём речь…');
 
-      let asr: TranscribeResponse;
       try {
-        asr = await transcribeAudio({
+        const outcome = await runDictation({
           blob,
-          durationMs,
-          language: settings.language,
-          model: settings.model,
-          vocabulary: settings.vocabulary,
+          settings,
+          modelChoice: settings.asrModel === 'whisper-large-v3' ? 'accurate' : 'turbo',
         });
+
+        setStage('done');
+        setStatusText('');
+        if (outcome.notice) setError(outcome.notice);
+
+        const entryId = newId();
+        setResult({
+          text: outcome.clean,
+          raw: outcome.raw,
+          style: settings.style,
+          fallback: outcome.fallback,
+          timing: {
+            asrMs: outcome.asrMs,
+            formatMs: outcome.formatMs ?? undefined,
+            totalMs: Math.round(performance.now() - startedAt),
+          },
+          entryId,
+        });
+
+        addHistory({
+          id: entryId,
+          createdAt: Date.now(),
+          raw: outcome.raw,
+          clean: outcome.clean,
+          style: settings.style,
+          language: outcome.language,
+          durationMs,
+          asrMs: outcome.asrMs,
+          formatMs: outcome.formatMs,
+          fallback: outcome.fallback,
+          host: null,
+        });
+
+        playChime();
       } catch (caught) {
-        const apiError = caught as ApiError;
         setStage('error');
         setStatusText('');
-        setError(apiError?.message ?? 'Не удалось распознать речь.');
-        // Сохраняем саму запись в историю, чтобы её можно было отправить позже.
-        addHistory({
-          id: localId,
-          createdAt: Date.now(),
-          raw: '',
-          clean: '',
-          style: settings.style,
-          language: null,
-          model: settings.model,
-          durationMs,
-          timing: {},
-          fallback: false,
-          pending: true,
-          audioError: apiError?.message,
-        });
-        return;
+        const message =
+          caught instanceof GroqClientError
+            ? caught.message
+            : caught instanceof Error
+              ? caught.message
+              : 'Не удалось распознать речь.';
+        setError(message);
+        if (caught instanceof GroqClientError && caught.code === 'no_key') setSettingsOpen(true);
       }
-
-      const asrMs = asr.latencyMs;
-      let clean = asr.text;
-      let fallback = false;
-      let formatMs = 0;
-
-      if (settings.cleanup) {
-        setStage('formatting');
-        setStatusText('Приводим текст в порядок…');
-        try {
-          const formatted = await formatText({
-            text: asr.text,
-            style: settings.style,
-            language: settings.language,
-            vocabulary: settings.vocabulary,
-          });
-          clean = formatted.text;
-          fallback = formatted.fallback;
-          formatMs = formatted.latencyMs;
-          if (formatted.fallback && formatted.message) {
-            setError(`Чистка не удалась: ${formatted.message}`);
-          }
-        } catch (caught) {
-          const apiError = caught as ApiError;
-          fallback = true;
-          setError(apiError?.message ?? 'Чистка недоступна — оставлен дословный текст.');
-        }
-      }
-
-      const timing: Timing = {
-        asrMs,
-        formatMs: formatMs || undefined,
-        totalMs: Math.round(performance.now() - startedAt),
-      };
-
-      setStage('done');
-      setStatusText('');
-      setResult({
-        text: clean,
-        raw: asr.text,
-        style: settings.style,
-        fallback,
-        timing,
-        entryId: localId,
-      });
-
-      addHistory({
-        id: localId,
-        createdAt: Date.now(),
-        raw: asr.text,
-        clean,
-        style: settings.style,
-        language: asr.detectedLanguage,
-        model: asr.model,
-        durationMs,
-        timing,
-        fallback,
-        pending: false,
-      });
-
-      // Мягкий звук завершения — короткий, ненавязчивый.
-      playChime();
     },
-    [addHistory, settings.cleanup, settings.language, settings.model, settings.style, settings.vocabulary],
+    [addHistory, hasKey, settings],
   );
 
   const startRecording = useCallback(async () => {
@@ -248,7 +199,6 @@ export default function App() {
     setStage('idle');
   }, [recorder]);
 
-  // Синхронизируем внутреннее состояние рекордера с общим состоянием экрана.
   useEffect(() => {
     if (recorder.state === 'recording' && (stage === 'idle' || stage === 'done')) {
       setStage('recording');
@@ -273,26 +223,18 @@ export default function App() {
       setStage('formatting');
       setStatusText('Меняем стиль…');
       try {
-        const formatted = await formatText({
-          text: result.raw,
-          style,
-          language: settings.language,
-          vocabulary: settings.vocabulary,
-        });
+        const formatted = await reformat({ raw: result.raw, style, settings });
         setResult({ ...result, text: formatted.text, style, fallback: formatted.fallback });
-        if (result.entryId) {
-          patchHistory(result.entryId, { clean: formatted.text, style });
-        }
+        if (result.entryId) patchHistory(result.entryId, { clean: formatted.text, style });
         setError(null);
       } catch (caught) {
-        const apiError = caught as ApiError;
-        setError(apiError?.message ?? 'Не удалось применить стиль.');
+        setError(caught instanceof Error ? caught.message : 'Не удалось применить стиль.');
       } finally {
         setStage('done');
         setStatusText('');
       }
     },
-    [patchHistory, result, settings.cleanup, settings.language, settings.vocabulary, updateSettings],
+    [patchHistory, result, settings, updateSettings],
   );
 
   const insertIntoPage = useCallback(() => {
@@ -318,7 +260,6 @@ export default function App() {
     }
   }, [result]);
 
-  // Горячие клавиши: старт/стоп диктовки и отмена.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const mod = event.metaKey || event.ctrlKey;
@@ -343,9 +284,6 @@ export default function App() {
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [cancelRecording, stage, startRecording, stopAndProcess]);
-
-  const apiDown = health !== null && !health.ok;
-  const recording = stage === 'recording';
 
   return (
     <div className="min-h-dvh bg-cream-100 text-ink-900">
@@ -380,7 +318,7 @@ export default function App() {
         <div className="mb-8 max-w-[640px] text-center">
           <p className="mb-3 inline-flex items-center gap-1.5 rounded-full bg-ink-900/5 px-3 py-1 text-[11px] text-ink-500">
             <Sparkles size={11} />
-            Whisper Large v3 · {settings.model === 'turbo' ? 'Turbo' : 'Large v3'}
+            Whisper Large v3 · {settings.asrModel === 'whisper-large-v3' ? 'Large v3' : 'Turbo'}
           </p>
           <h1 className="display text-[clamp(38px,7vw,64px)] text-ink-900">
             Не печатай,
@@ -394,19 +332,26 @@ export default function App() {
         </div>
 
         <RecordingPill
-          stage={recording ? 'recording' : stage}
+          stage={stage === 'recording' ? 'recording' : stage}
           level={recorder.level}
           elapsedMs={recorder.elapsedMs}
           statusText={statusText}
           onStart={() => void startRecording()}
           onStop={() => void stopAndProcess()}
           onCancel={cancelRecording}
-          disabled={apiDown}
+          disabled={false}
         />
 
-        {apiDown && health && !health.ok ? (
+        {!hasKey ? (
           <div className="mt-4 max-w-[520px] rounded-2xl border border-ink-900/10 bg-white/60 px-4 py-3 text-center text-[12px] leading-relaxed text-ink-500">
-            {health.message}
+            Чтобы диктовать, вставьте свой ключ Groq — он бесплатный.{' '}
+            <button
+              type="button"
+              onClick={() => setSettingsOpen(true)}
+              className="underline decoration-ink-900/25 underline-offset-4 hover:text-ink-900"
+            >
+              Открыть настройки
+            </button>
           </div>
         ) : null}
 
@@ -446,8 +391,17 @@ export default function App() {
         </div>
 
         <footer className="mt-16 max-w-[560px] text-center text-[11px] leading-relaxed text-ink-400">
-          Аудио уходит в Groq только для распознавания и не сохраняется на сервере. История и
-          словарь живут в этом браузере. Всё остальное — Whisper large-v3 и LLM-чистка.
+          Сервера нет: аудио уходит из браузера прямо в Groq и не сохраняется. Ключ, история и
+          словарь живут только в этом браузере. Для диктовки в любом приложении есть{' '}
+          <a
+            href="https://github.com/StefPlug/Speacher"
+            className="underline decoration-ink-900/20 underline-offset-4 hover:text-ink-900"
+            target="_blank"
+            rel="noreferrer"
+          >
+            расширение
+          </a>
+          .
         </footer>
       </main>
 
@@ -458,8 +412,6 @@ export default function App() {
           onClose={() => setSettingsOpen(false)}
         />
       ) : null}
-
-      <audio ref={audioRef} hidden />
     </div>
   );
 }
@@ -467,7 +419,9 @@ export default function App() {
 /** Короткий сигнал окончания обработки: два тихих тона через Web Audio. */
 function playChime(): void {
   try {
-    const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    const Ctx =
+      window.AudioContext ??
+      (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (!Ctx) return;
     const ctx = new Ctx();
     const now = ctx.currentTime;

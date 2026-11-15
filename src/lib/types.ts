@@ -1,19 +1,23 @@
-export type Style = 'neutral' | 'message' | 'email' | 'code';
+/** Веб-версия использует те же типы настроек, что и расширение. */
+export type {
+  SpeacherSettings,
+  HistoryEntry,
+} from '../../shared/settings';
+export { DEFAULT_SETTINGS } from '../../shared/settings';
+export { STYLE_LABELS } from '../../shared/prompts';
+export type { Style } from '../../shared/prompts';
 
 export type LanguageChoice = 'auto' | 'ru' | 'en';
-
 export type ModelChoice = 'turbo' | 'accurate';
 
-export type Settings = {
-  language: LanguageChoice;
-  model: ModelChoice;
-  style: Style;
-  cleanup: boolean;
-  saveHistory: boolean;
-  vocabulary: string[];
-};
-
-export type Stage = 'idle' | 'requesting' | 'recording' | 'transcribing' | 'formatting' | 'done' | 'error';
+export type Stage =
+  | 'idle'
+  | 'requesting'
+  | 'recording'
+  | 'transcribing'
+  | 'formatting'
+  | 'done'
+  | 'error';
 
 export type Timing = {
   asrMs?: number;
@@ -21,39 +25,8 @@ export type Timing = {
   totalMs?: number;
 };
 
-export type HistoryEntry = {
-  id: string;
-  createdAt: number;
-  raw: string;
-  clean: string;
-  style: Style;
-  language: string | null;
-  model: string;
-  durationMs: number;
-  timing: Timing;
-  fallback: boolean;
-  pending: boolean;
-  audioError?: string;
-};
-
 export type ApiError = {
   error: string;
   message: string;
   retryAfter?: number;
-};
-
-export const DEFAULT_SETTINGS: Settings = {
-  language: 'auto',
-  model: 'turbo',
-  style: 'neutral',
-  cleanup: true,
-  saveHistory: true,
-  vocabulary: [],
-};
-
-export const STYLE_LABELS: Record<Style, string> = {
-  neutral: 'Обычный текст',
-  message: 'Сообщение',
-  email: 'Письмо',
-  code: 'Код',
 };

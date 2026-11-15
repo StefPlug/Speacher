@@ -88,9 +88,17 @@ export function HistoryPanel({ entries, onDelete, onClear }: Props) {
                   <span>{formatDate(entry.createdAt)}</span>
                   <span className="text-ink-900/15">·</span>
                   <span>{(entry.durationMs / 1000).toFixed(1)} с</span>
-                  {entry.pending ? (
+                  {entry.host ? (
+                    <>
+                      <span className="text-ink-900/15">·</span>
+                      <span className="max-w-[120px] truncate" title={entry.host}>
+                        {entry.host.replace(/^https?:\/\//, '').split('/')[0]}
+                      </span>
+                    </>
+                  ) : null}
+                  {entry.fallback ? (
                     <span className="rounded-full bg-rose-300/60 px-1.5 py-0.5 text-[10px] text-ink-900">
-                      не отправлено
+                      без чистки
                     </span>
                   ) : null}
                 </span>

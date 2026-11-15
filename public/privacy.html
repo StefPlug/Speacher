@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Speacher — политика приватности</title>
+    <meta name="description" content="Какие данные обрабатывает расширение Speacher и что остаётся на вашем устройстве." />
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <style>
+      :root {
+        --cream: #f6f2ea;
+        --ink: #141414;
+        --muted: #6b6b6b;
+        --line: rgba(20, 20, 20, 0.12);
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--cream);
+        color: var(--ink);
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+        line-height: 1.65;
+        -webkit-font-smoothing: antialiased;
+      }
+      main { max-width: 720px; margin: 0 auto; padding: 56px 24px 96px; }
+      a { color: var(--ink); text-decoration-color: rgba(20, 20, 20, 0.3); text-underline-offset: 3px; }
+      .back { font-size: 13px; color: var(--muted); text-decoration: none; }
+      h1 {
+        font-family: 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+        font-size: clamp(34px, 6vw, 48px);
+        line-height: 1.05;
+        letter-spacing: -0.02em;
+        margin: 20px 0 8px;
+      }
+      .lead { color: var(--muted); font-size: 15px; margin-bottom: 36px; }
+      h2 { font-size: 16px; margin: 36px 0 10px; }
+      p, li { font-size: 14.5px; color: #2a2a2a; }
+      ul { padding-left: 20px; }
+      li { margin-bottom: 8px; }
+      .card {
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.6);
+        border-radius: 20px;
+        padding: 18px 20px;
+        margin: 24px 0;
+      }
+      .card strong { display: block; margin-bottom: 6px; }
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 13px;
+        background: rgba(20, 20, 20, 0.06);
+        padding: 1px 5px;
+        border-radius: 5px;
+      }
+      footer { margin-top: 48px; padding-top: 20px; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--muted); }
+    </style>
+  </head>
+  <body>
+    <main>
+      <a class="back" href="./">← Speacher</a>
+      <h1>Политика приватности</h1>
+      <p class="lead">Действует для расширения Speacher и веб-версии. Обновлено 15 ноября 2026.</p>
+
+      <div class="card">
+        <strong>Коротко</strong>
+        <p style="margin: 0">
+          У Speacher нет своего сервера. Аудио уходит только в Groq для распознавания, ключ и
+          история хранятся в вашем браузере. Мы не собираем аналитику, не ведём аккаунты и не
+          передаём данные третьим лицам.
+        </p>
+      </div>
+
+      <h2>Какие данные обрабатываются</h2>
+      <ul>
+        <li>
+          <strong>Аудио с микрофона.</strong> Записывается только пока диктовка активна (хоткей или
+          кнопка). Отправляется напрямую в Groq API и не сохраняется на промежуточном сервере —
+          его просто нет.
+        </li>
+        <li>
+          <strong>Распознанный текст.</strong> Обрабатывается моделью Groq для чистки и вставляется
+          в активное поле страницы.
+        </li>
+        <li>
+          <strong>Ключ Groq API.</strong> Вводится вами в настройках и хранится локально в
+          <code>chrome.storage.local</code> (расширение) или <code>localStorage</code> (веб-версия).
+          Передаётся только в Groq как заголовок авторизации.
+        </li>
+        <li>
+          <strong>История диктовок, личный словарь, настройки.</strong> Только на вашем устройстве.
+          Историю можно выключить или очистить в любой момент.
+        </li>
+      </ul>
+
+      <h2>Что расширение НЕ делает</h2>
+      <ul>
+        <li>Не читает содержимое страниц. Content script рисует только индикатор записи.</li>
+        <li>Не делает скриншотов и не читает текст вокруг курсора.</li>
+        <li>Не отправляет данные никуда, кроме <code>https://api.groq.com</code>.</li>
+        <li>Не содержит аналитики, трекеров и рекламы.</li>
+        <li>Не требует регистрации и не создаёт аккаунт.</li>
+      </ul>
+
+      <h2>Разрешения и зачем они нужны</h2>
+      <ul>
+        <li><strong>storage</strong> — хранить настройки, ключ, словарь и историю локально.</li>
+        <li><strong>scripting, activeTab</strong> — вставить готовый текст в поле активной вкладки.</li>
+        <li><strong>offscreen</strong> — записывать аудио, пока попап расширения закрыт.</li>
+        <li><strong>commands</strong> — глобальная комбинация клавиш для старта диктовки.</li>
+        <li><strong>host_permissions: api.groq.com</strong> — отправлять запросы распознавания.</li>
+      </ul>
+
+      <h2>Третьи стороны</h2>
+      <p>
+        Единственный получатель данных — Groq (<a href="https://groq.com/privacy-policy/" rel="noreferrer" target="_blank">политика приватности Groq</a>).
+        Условия хранения аудио на стороне Groq определяются их политикой и вашим тарифом.
+      </p>
+
+      <h2>Ваши действия</h2>
+      <ul>
+        <li>Удалить историю — в настройках расширения, кнопка «Очистить историю».</li>
+        <li>Полностью удалить данные — удалить расширение или очистить данные сайта.</li>
+        <li>Отозвать ключ — в консоли Groq, раздел API Keys.</li>
+      </ul>
+
+      <h2>Дети</h2>
+      <p>Сервис не предназначен для детей младше 13 лет и не собирает их данные осознанно.</p>
+
+      <h2>Изменения</h2>
+      <p>
+        При существенных изменениях обновляется дата в начале страницы, а в расширении — версия.
+        История правок доступна в репозитории проекта.
+      </p>
+
+      <footer>
+        Вопросы и сообщения об ошибках — через issues в
+        <a href="https://github.com/StefPlug/Speacher" target="_blank" rel="noreferrer">репозитории проекта</a>.
+      </footer>
+    </main>
+  </body>
+</html>

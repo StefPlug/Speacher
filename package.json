@@ -10,7 +10,12 @@
     "dev:web": "vite",
     "build": "tsc -b && vite build",
     "start": "tsx server/index.ts",
-    "typecheck": "tsc -b --force"
+    "typecheck": "tsc -b --force",
+    "build:site": "tsc -b && vite build",
+    "build:ext": "vite build --mode extension",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "zip:ext": "npm run build:ext && cd dist-extension && zip -r ../speacher-extension.zip . -x \"*.map\""
   },
   "dependencies": {
     "dotenv": "^17.2.3",
@@ -21,6 +26,7 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.5",
+    "@types/chrome": "^0.3.7",
     "@types/express": "^5.0.6",
     "@types/node": "^24.10.1",
     "@types/react": "^19.3.0",
@@ -30,6 +36,7 @@
     "tailwindcss": "^4.3.5",
     "tsx": "^4.23.15",
     "typescript": "^5.9.3",
-    "vite": "^8.3.8"
+    "vite": "^8.3.8",
+    "vitest": "^3.2.7"
   }
 }
